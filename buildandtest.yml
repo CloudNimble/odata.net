@@ -10,10 +10,6 @@ steps:
 - task: UseDotNet@2
   inputs:
     version: '2.1.3'
-
-- task: UseDotNet@2
-  inputs:
-    version: '8.x'
  
 - task: PowerShell@2
   inputs:
@@ -32,12 +28,7 @@ task: UseDotNet@2
 - task: UseDotNet@2
   inputs:
     version: '3.1.x'
-
-- task: UseDotNet@2
-  inputs:
-    version: '8.x'
-
-
+    
 - task: DotNetCoreCLI@2
   displayName: 'Build'  
   inputs:
