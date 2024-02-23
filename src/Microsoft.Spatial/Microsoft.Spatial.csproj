@@ -9,6 +9,8 @@
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
     <IsPackable>true</IsPackable>
     <IsShipping>true</IsShipping>
+    <DelaySign>False</DelaySign>
+    <SignAssembly>False</SignAssembly>
   </PropertyGroup>
    
   <!-- References -->

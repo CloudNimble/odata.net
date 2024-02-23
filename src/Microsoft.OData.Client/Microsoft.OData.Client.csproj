@@ -6,6 +6,8 @@
     <DocumentationFile>$(AssemblyName).xml</DocumentationFile>
     <DefineConstants>$(DefineConstants);ODATA_CLIENT;SUPPRESS_PORTABLELIB_TARGETFRAMEWORK_ATTRIBUTE;DelaySignKeys</DefineConstants>
    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+   <DelaySign>False</DelaySign>
+   <SignAssembly>False</SignAssembly>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(TargetFramework)' == 'net8.0'">
