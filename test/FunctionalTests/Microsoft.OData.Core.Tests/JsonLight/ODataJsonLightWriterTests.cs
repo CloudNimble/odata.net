@@ -23,6 +23,7 @@ using Microsoft.OData.UriParser;
 using Microsoft.OData.Tests;
 using Microsoft.Test.OData.DependencyInjection;
 using Xunit;
+using System.Threading;
 
 namespace Microsoft.OData.Core.Tests.JsonLight
 {
@@ -1261,7 +1262,7 @@ namespace Microsoft.OData.Core.Tests.JsonLight
         }
 
 #if NETCOREAPP
-        [Fact(Skip="ODataUtf8JsonWriter does not currently implement logic for writing binary values to stream")]
+        [Fact]
         public async Task WriteBinaryValueToStream_WithODataUtf8JsonWriter_Async()
         {
             var addressResource = CreateAddressResource();
@@ -1288,10 +1289,10 @@ namespace Microsoft.OData.Core.Tests.JsonLight
                     {
                         var bytes = new byte[] { 1, 2, 3, 4, 5, 6, 7, 8, 9, 0 };
 
-                        await stream.WriteAsync(bytes, 0, 4);
-                        await stream.WriteAsync(bytes, 4, 4);
-                        await stream.WriteAsync(bytes, 8, 2);
-                        await stream.FlushAsync();
+                        await stream.WriteAsync(bytes, 0, 4, CancellationToken.None);
+                        await stream.WriteAsync(bytes, 4, 4, CancellationToken.None);
+                        await stream.WriteAsync(bytes, 8, 2, CancellationToken.None);
+                        await stream.FlushAsync(CancellationToken.None);
                     }
 
                     await jsonLightWriter.WriteEndAsync();
