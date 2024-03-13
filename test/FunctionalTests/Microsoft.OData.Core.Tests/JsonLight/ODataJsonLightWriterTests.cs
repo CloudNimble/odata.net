@@ -1312,6 +1312,95 @@ namespace Microsoft.OData.Core.Tests.JsonLight
                 result);
         }
 
+        [Fact]
+        public async Task WriteStringValueToTextWriter_WithODataUtf8JsonWriter_Async()
+        {
+            var addressResource = CreateAddressResource();
+            var pangramProperty = new ODataPropertyInfo { Name = "Pangram" };
+
+            Action<IContainerBuilder> configureWriter = (builder) =>
+            {
+                builder.AddService<IJsonWriterFactory>(ServiceLifetime.Singleton, _ => ODataUtf8JsonWriterFactory.Default);
+            };
+
+            var result = await SetupJsonLightWriterAndRunTestAsync(
+                async (jsonLightWriter) =>
+                {
+                    await jsonLightWriter.WriteStartAsync(addressResource);
+                    await jsonLightWriter.WriteStartAsync(pangramProperty);
+
+                    using (var textWriter = await jsonLightWriter.CreateTextWriterAsync())
+                    {
+                        string value = "The quick brown";
+                        string value1 = " fox jumps over";
+                        string value2 = " the lazy dog";
+                        char[] charArray = value.ToCharArray();
+                        char[] charArray1 = value1.ToCharArray();
+                        char[] charArray2 = value2.ToCharArray();
+
+                        // Call WriteAsync passing in the byte array
+                        await textWriter.WriteAsync(charArray, 0, charArray.Length);
+                        await textWriter.WriteAsync(charArray1, 0, charArray1.Length);
+                        await textWriter.WriteAsync(charArray2, 0, charArray2.Length);
+                        await textWriter.FlushAsync();
+                    }
+
+                    await jsonLightWriter.WriteEndAsync();
+                    await jsonLightWriter.WriteEndAsync();
+                },
+                this.orderEntitySet,
+                this.orderEntityType,
+                configAction: configureWriter);
+
+            Assert.Equal(
+                "{\"@odata.context\":\"http://tempuri.org/$metadata#Orders/NS.Address/$entity\"," +
+                "\"Street\":\"One Microsoft Way\",\"City\":\"Redmond\"," +
+                "\"Pangram\":\"The quick brown fox jumps over the lazy dog\"}",
+                result);
+        }
+
+        [Fact]
+        public async Task WriteStringValueWithSpecialCharsToTextWriter_WithODataUtf8JsonWriter_Async()
+        {
+            var addressResource = CreateAddressResource();
+            var pangramProperty = new ODataPropertyInfo { Name = "Pangram" };
+            string expectedValue = new string('x', 20000) + "Foo \\u0438\\u044F" + new string('x', 10000);
+
+            Action<IContainerBuilder> configureWriter = (builder) =>
+            {
+                builder.AddService<IJsonWriterFactory>(ServiceLifetime.Singleton, _ => ODataUtf8JsonWriterFactory.Default);
+            };
+
+            var result = await SetupJsonLightWriterAndRunTestAsync(
+                async (jsonLightWriter) =>
+                {
+                    await jsonLightWriter.WriteStartAsync(addressResource);
+                    await jsonLightWriter.WriteStartAsync(pangramProperty);
+
+                    using (var textWriter = await jsonLightWriter.CreateTextWriterAsync())
+                    {
+                        string value = new string('x', 20000) + "Foo ия" + new string('x', 10000);
+                        char[] charArray = value.ToCharArray();
+
+                        // Call WriteAsync passing in the byte array
+                        await textWriter.WriteAsync(charArray, 0, charArray.Length);
+                        await textWriter.FlushAsync();
+                    }
+
+                    await jsonLightWriter.WriteEndAsync();
+                    await jsonLightWriter.WriteEndAsync();
+                },
+                this.orderEntitySet,
+                this.orderEntityType,
+                configAction: configureWriter);
+
+            Assert.Equal(
+                "{\"@odata.context\":\"http://tempuri.org/$metadata#Orders/NS.Address/$entity\"," +
+                "\"Street\":\"One Microsoft Way\",\"City\":\"Redmond\"," +
+                "\"Pangram\":\""+ expectedValue + "\"}",
+                result);
+        }
+
 #endif
 
         [Fact]

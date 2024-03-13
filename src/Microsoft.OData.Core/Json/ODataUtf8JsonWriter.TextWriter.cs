@@ -103,7 +103,6 @@ namespace Microsoft.OData.Json
             public ODataUtf8JsonTextWriter(ODataUtf8JsonWriter jsonWriter)
             {
                 this.jsonWriter = jsonWriter;
-                buffer = new char[chunkSize];
             }
 
             public override Encoding Encoding => throw new NotImplementedException();
@@ -175,7 +174,7 @@ namespace Microsoft.OData.Json
             /// <returns>A task representing the asynchronous write operation.</returns>
             public override async Task WriteAsync(char[] value, int index, int count)
             {
-                ReadOnlyMemory<char> charValuesToWrite = buffer.AsMemory().Slice(index, count);
+                ReadOnlyMemory<char> charValuesToWrite = value.AsMemory().Slice(index, count);
                 await this.StartWritingCharValuesInChunksAsync(charValuesToWrite);
             }
 
@@ -290,16 +289,16 @@ namespace Microsoft.OData.Json
             private void WriteChunk(ReadOnlySpan<char> chunk, int chunkLength, bool isFinalBlock, int firstIndexToEscape)
             {
                 if (firstIndexToEscape != -1)
-                {
-                    if (this.buffer == null)
-                    {
-                        this.buffer = new char[chunkSize];
-                    }
-
+                { 
                     this.jsonWriter.WriteEscapedStringChunk(chunk.Slice(0, chunkLength), firstIndexToEscape, isFinalBlock, out charsNotWrittenFromPreviousChunk);
 
                     if (charsNotWrittenFromPreviousChunk > 0)
                     {
+                        if (this.buffer == null)
+                        {
+                            this.buffer = new char[chunkSize];
+                        }
+
                         // Update the buffer with unprocessed chars from the current chunk.
                         chunk.Slice(chunkLength - charsNotWrittenFromPreviousChunk).CopyTo(this.buffer.AsSpan(bufferPosition));
                         bufferPosition += charsNotWrittenFromPreviousChunk;
