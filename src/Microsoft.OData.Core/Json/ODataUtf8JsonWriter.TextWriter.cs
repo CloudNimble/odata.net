@@ -97,6 +97,8 @@ namespace Microsoft.OData.Json
         {
             ODataUtf8JsonWriter jsonWriter = null;
             private char[] buffer;
+            private int bufferPosition = 0;
+            int charsNotWrittenFromPreviousChunk = 0;
 
             public ODataUtf8JsonTextWriter(ODataUtf8JsonWriter jsonWriter)
             {
@@ -112,15 +114,17 @@ namespace Microsoft.OData.Json
             public override void Flush()
             {
                 // If there are unprocessed chars, encode and write them as the final block.
-                ReadOnlySpan<char> charsNotProcessedFromPreviousChunk = this.buffer;
+                ReadOnlySpan<char> charsNotProcessedFromPreviousChunk = this.buffer.AsSpan().Slice(bufferPosition - charsNotWrittenFromPreviousChunk, charsNotWrittenFromPreviousChunk);
 
                 if (!charsNotProcessedFromPreviousChunk.IsEmpty)
                 {
                     int firstIndexToEscape = this.jsonWriter.NeedsEscaping(charsNotProcessedFromPreviousChunk);
-                    WriteChunk(charsNotProcessedFromPreviousChunk, isFinalBlock: true, firstIndexToEscape);
+                    WriteChunk(charsNotProcessedFromPreviousChunk, charsNotProcessedFromPreviousChunk.Length, isFinalBlock: true, firstIndexToEscape);
 
                     // Clear the buffer since all bytes have been written.
-                    buffer = Array.Empty<char>();
+                    this.buffer = null;
+                    this.bufferPosition = 0;
+                    this.charsNotWrittenFromPreviousChunk = 0;
                 }
 
                 this.jsonWriter.Flush();
@@ -134,15 +138,17 @@ namespace Microsoft.OData.Json
             public override async Task FlushAsync()
             {
                 // If there are unprocessed chars, encode and write them as the final block.
-                ReadOnlyMemory<char> charsNotProcessedFromPreviousChunk = this.buffer;
+                ReadOnlyMemory<char> charsNotProcessedFromPreviousChunk = this.buffer.AsMemory().Slice(bufferPosition - charsNotWrittenFromPreviousChunk, charsNotWrittenFromPreviousChunk);
 
                 if (!charsNotProcessedFromPreviousChunk.IsEmpty)
                 {
                     int firstIndexToEscape = this.jsonWriter.NeedsEscaping(charsNotProcessedFromPreviousChunk.Span);
-                    WriteChunk(charsNotProcessedFromPreviousChunk.Span, isFinalBlock: true, firstIndexToEscape);
+                    WriteChunk(charsNotProcessedFromPreviousChunk.Span, charsNotProcessedFromPreviousChunk.Length, isFinalBlock: true, firstIndexToEscape);
 
                     // Clear the buffer since all bytes have been written.
-                    buffer = Array.Empty<char>();
+                    this.buffer = null;
+                    this.bufferPosition = 0;
+                    this.charsNotWrittenFromPreviousChunk = 0;
                 }
 
                 await this.jsonWriter.FlushAsync();
@@ -186,16 +192,17 @@ namespace Microsoft.OData.Json
                     bool isFinalBlock = false;
                     ReadOnlySpan<char> chunk = value.Slice(i, remainingChars);
 
-                    // Get unprocessed chars from the buffer.
-                    ReadOnlySpan<char> charsNotProcessedFromPreviousChunk = this.buffer;
-
                     int firstIndexToEscape = this.jsonWriter.NeedsEscaping(chunk);
 
                     // If the buffer is not empty, then we copy the chars from the buffer
                     // to the current chunk being processed.
-                    if (!charsNotProcessedFromPreviousChunk.IsEmpty)
+                    if (this.buffer != null)
                     {
-                        char[] combinedArray = new char[charsNotProcessedFromPreviousChunk.Length + chunk.Length];
+                        // Get unprocessed chars from the buffer.
+                        ReadOnlySpan<char> charsNotProcessedFromPreviousChunk = this.buffer.AsSpan().Slice(bufferPosition - charsNotWrittenFromPreviousChunk, charsNotWrittenFromPreviousChunk);
+                        int totalLength = charsNotProcessedFromPreviousChunk.Length + chunk.Length;
+
+                        char[] combinedArray = ArrayPool<char>.Shared.Rent(totalLength);
 
                         // Copy chars from charsNotProcessedFromPreviousChunk to the combined array
                         charsNotProcessedFromPreviousChunk.CopyTo(combinedArray);
@@ -204,12 +211,17 @@ namespace Microsoft.OData.Json
                         chunk.CopyTo(combinedArray.AsSpan().Slice(charsNotProcessedFromPreviousChunk.Length));
 
                         // Write the chunk depending on the firstIndexToEscape
-                        WriteChunk(combinedArray, isFinalBlock, firstIndexToEscape);
+                        WriteChunk(combinedArray, totalLength, isFinalBlock, firstIndexToEscape);
+
+                        if (combinedArray != null)
+                        {
+                            ArrayPool<char>.Shared.Return(combinedArray);
+                        }
                     }
                     else
                     {
                         // Write the chunk directly depending on the firstIndexToEscape
-                        WriteChunk(chunk, isFinalBlock, firstIndexToEscape);
+                        WriteChunk(chunk, chunk.Length, isFinalBlock, firstIndexToEscape);
                     }
 
                     // Flush the writer if the buffer threshold is reached
@@ -231,16 +243,17 @@ namespace Microsoft.OData.Json
                     bool isFinalBlock = false;
                     ReadOnlyMemory<char> chunk = value.Slice(i, remainingChars);
 
-                    // Get unprocessed chars from the buffer.
-                    ReadOnlyMemory<char> charsNotProcessedFromPreviousChunk = this.buffer;
-
                     int firstIndexToEscape = this.jsonWriter.NeedsEscaping(chunk.Span);
 
                     // If the buffer is not empty, then we copy the chars from the buffer
                     // to the current chunk being processed.
-                    if (!charsNotProcessedFromPreviousChunk.IsEmpty)
+                    if (this.buffer != null)
                     {
-                        char[] combinedArray = new char[charsNotProcessedFromPreviousChunk.Length + chunk.Length];
+                        // Get unprocessed chars from the buffer.
+                        ReadOnlyMemory<char> charsNotProcessedFromPreviousChunk = this.buffer.AsMemory().Slice(bufferPosition - charsNotWrittenFromPreviousChunk, charsNotWrittenFromPreviousChunk);
+                        int totalLength = charsNotProcessedFromPreviousChunk.Length + chunk.Length;
+
+                        char[] combinedArray = ArrayPool<char>.Shared.Rent(totalLength);
 
                         // Copy chars from charsNotProcessedFromPreviousChunk to the combined array
                         charsNotProcessedFromPreviousChunk.CopyTo(combinedArray);
@@ -249,12 +262,17 @@ namespace Microsoft.OData.Json
                         chunk.CopyTo(combinedArray.AsMemory().Slice(charsNotProcessedFromPreviousChunk.Length));
 
                         // Write the chunk depending on the firstIndexToEscape
-                        WriteChunk(combinedArray, isFinalBlock, firstIndexToEscape);
+                        WriteChunk(combinedArray, totalLength, isFinalBlock, firstIndexToEscape);
+
+                        if (combinedArray != null)
+                        {
+                            ArrayPool<char>.Shared.Return(combinedArray);
+                        }
                     }
                     else
                     {
                         // Write the chunk directly depending on the firstIndexToEscape
-                        WriteChunk(chunk.Span, isFinalBlock, firstIndexToEscape);
+                        WriteChunk(chunk.Span, chunk.Length, isFinalBlock, firstIndexToEscape);
                     }
 
                     // Flush the writer if the buffer threshold is reached
@@ -266,22 +284,25 @@ namespace Microsoft.OData.Json
             /// Writes a chunk of characters to the JSON writer, either escaped or directly, depending on the presence of characters that need escaping.
             /// </summary>
             /// <param name="chunk">The read-only span containing the chunk of characters to be written.</param>
+            /// <param name="chunkLength">The length of the read-only span containing the chunk of characters to be written.</param>
             /// <param name="isFinalBlock">A boolean value indicating whether the current chunk is the final block of characters to be written.</param>
             /// <param name="firstIndexToEscape">The index of the first character in the chunk that requires escaping, or -1 if no characters need escaping.</param>
-            private void WriteChunk(ReadOnlySpan<char> chunk, bool isFinalBlock, int firstIndexToEscape)
+            private void WriteChunk(ReadOnlySpan<char> chunk, int chunkLength, bool isFinalBlock, int firstIndexToEscape)
             {
                 if (firstIndexToEscape != -1)
                 {
-                    this.jsonWriter.WriteEscapedStringChunk(chunk, firstIndexToEscape, isFinalBlock, out int charsNotWrittenFromPreviousChunk);
+                    if (this.buffer == null)
+                    {
+                        this.buffer = new char[chunkSize];
+                    }
+
+                    this.jsonWriter.WriteEscapedStringChunk(chunk.Slice(0, chunkLength), firstIndexToEscape, isFinalBlock, out charsNotWrittenFromPreviousChunk);
 
                     if (charsNotWrittenFromPreviousChunk > 0)
                     {
                         // Update the buffer with unprocessed chars from the current chunk.
-                        this.buffer = chunk.Slice(chunk.Length - charsNotWrittenFromPreviousChunk).ToArray();
-                    }
-                    else
-                    {
-                        this.buffer = Array.Empty<char>();
+                        chunk.Slice(chunkLength - charsNotWrittenFromPreviousChunk).CopyTo(this.buffer.AsSpan(bufferPosition));
+                        bufferPosition += charsNotWrittenFromPreviousChunk;
                     }
                 }
                 else

@@ -270,8 +270,10 @@ namespace Microsoft.OData.Json
                     {
                         // Get unprocessed bytes from the buffer.
                         ReadOnlySpan<byte> bytesNotProcessedFromPreviousChunk = this.buffer.AsSpan().Slice(bufferPosition - bytesNotWrittenFromPreviousChunk, bytesNotWrittenFromPreviousChunk);
+                        int totalLength = bytesNotProcessedFromPreviousChunk.Length + chunk.Length;
 
-                        byte[] combinedArray = new byte[bytesNotProcessedFromPreviousChunk.Length + chunk.Length];
+                        // Rent an array to hold bytes from both previous and current chunks.
+                        byte[] combinedArray = ArrayPool<byte>.Shared.Rent(totalLength);
 
                         // Copy bytes from bytesNotProcessedFromPreviousChunk to the combined array
                         bytesNotProcessedFromPreviousChunk.CopyTo(combinedArray);
@@ -279,11 +281,16 @@ namespace Microsoft.OData.Json
                         // Copy bytes from chunk to the combined array, starting from the end of bytesNotProcessedFromPreviousChunk
                         chunk.CopyTo(combinedArray.AsSpan().Slice(bytesNotProcessedFromPreviousChunk.Length));
 
-                        WriteChunk(combinedArray, isFinalBlock);
+                        WriteChunk(combinedArray,totalLength, isFinalBlock);
+
+                        if (combinedArray != null)
+                        {
+                            ArrayPool<byte>.Shared.Return(combinedArray);
+                        }
                     }
                     else
                     {
-                        WriteChunk(chunk, isFinalBlock);
+                        WriteChunk(chunk,chunk.Length, isFinalBlock);
                     }
 
                     // Flush the writer if the buffer threshold is reached
@@ -312,8 +319,10 @@ namespace Microsoft.OData.Json
                     {
                         ReadOnlyMemory<byte> bytesNotProcessedFromPreviousChunk = this.buffer.AsMemory().Slice(bufferPosition - bytesNotWrittenFromPreviousChunk, bytesNotWrittenFromPreviousChunk);
 
-                        // Create a new combined array to hold bytes from both previous and current chunks.
-                        byte[] combinedArray = new byte[bytesNotProcessedFromPreviousChunk.Length + chunk.Length];
+                        int totalLength = bytesNotProcessedFromPreviousChunk.Length + chunk.Length;
+
+                        // Rent an array to hold bytes from both previous and current chunks.
+                        byte[] combinedArray = ArrayPool<byte>.Shared.Rent(totalLength);
 
                         // Copy bytes from bytesNotProcessedFromPreviousChunk to the combined array
                         bytesNotProcessedFromPreviousChunk.Span.CopyTo(combinedArray);
@@ -321,11 +330,16 @@ namespace Microsoft.OData.Json
                         // Copy bytes from chunk to the combined array, starting from the end of bytesNotProcessedFromPreviousChunk
                         chunk.Span.CopyTo(combinedArray.AsSpan(bytesNotProcessedFromPreviousChunk.Length));
 
-                        WriteChunk(combinedArray, isFinalBlock);
+                        WriteChunk(combinedArray, totalLength, isFinalBlock);
+
+                        if (combinedArray != null)
+                        {
+                            ArrayPool<byte>.Shared.Return(combinedArray);
+                        }
                     }
                     else
                     {
-                        WriteChunk(chunk.Span, isFinalBlock);
+                        WriteChunk(chunk.Span, chunk.Length, isFinalBlock);
                     }
 
                     // Flush the writer if the buffer threshold is reached
@@ -338,10 +352,10 @@ namespace Microsoft.OData.Json
             /// </summary>
             /// <param name="chunk">The chunk of data to be encoded and written.</param>
             /// <param name="isFinalBlock">A boolean indicating whether this is the final block of data.</param>
-            private void WriteChunk(ReadOnlySpan<byte> chunk, bool isFinalBlock)
+            private void WriteChunk(ReadOnlySpan<byte> chunk, int chunkLength, bool isFinalBlock)
             {
                 // Encode the current chunk using Base64 and write it
-                this.jsonWriter.Base64EncodeAndWriteChunk(chunk, isFinalBlock, out bytesNotWrittenFromPreviousChunk);
+                this.jsonWriter.Base64EncodeAndWriteChunk(chunk.Slice(0, chunkLength), isFinalBlock, out bytesNotWrittenFromPreviousChunk);
 
                 if (bytesNotWrittenFromPreviousChunk > 0)
                 {
@@ -351,7 +365,7 @@ namespace Microsoft.OData.Json
                     }
 
                     // Update the buffer with unprocessed bytes from the current chunk.
-                    chunk.Slice(chunk.Length - bytesNotWrittenFromPreviousChunk).CopyTo(this.buffer.AsSpan(bufferPosition));
+                    chunk.Slice(chunkLength - bytesNotWrittenFromPreviousChunk).CopyTo(this.buffer.AsSpan(bufferPosition));
                     bufferPosition += bytesNotWrittenFromPreviousChunk;
                 }
             }
